@@ -1,205 +1,183 @@
-#ifndef AT_H
-#define AT_H
+#ifndef AT_HPP
+#define AT_HPP
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <climits>
+#include <iostream>
+#include <memory>
+#include <vector>
+#include <algorithm>
+#include <string>
+#include <limits>
 
 namespace AT {
-    typedef struct asciinode {
-        struct asciinode * left, * right;
-        //length of the edge from this node to its children
-        int edge_length;
-        int height;
-        int lablen;
-        //-1=I am left, 0=I am root, 1=right
-        int parent_dir;
-        //max supported unit32 in dec, 10 digits max
-        char label[11];
-    } asciinode;
 
-    typedef struct Tree {
-        int val;
-        struct Tree *left, *right;
-    } Tree;
+// Helper struct for type punning
+struct TreeNodeRaw {
+    int val;
+    TreeNodeRaw* left;
+    TreeNodeRaw* right;
+};
 
-    const int MAX_HEIGHT = 1000;
-    int lprofile[1000];
-    int rprofile[1000];
-    // const int Infinity = (1<<20);
-    //adjust gap between left and right nodes
-    int gap = 3;
-    //used for printing next node in the same level, 
-    //this is the x coordinate of the next char printed
-    int print_next;
+struct AsciiNode {
+    std::unique_ptr<AsciiNode> left, right;
+    int edge_length = 0;
+    int height = 0;
+    std::string label;
+    int parent_dir = 0; // -1 = left, 0 = root, 1 = right
 
-    int Min(int a, int b) { return (a < b) ? a : b; }
-    int Max(int a, int b) { return (a > b) ? a : b; }
+    AsciiNode(int value) : label(std::to_string(value)) {}
     
-    asciinode * build_ascii_tree_recursive(Tree * t) {
-        asciinode * node;
-        if (t == NULL) return NULL;
-        node = (asciinode*)malloc(sizeof(asciinode));
-        node->left = build_ascii_tree_recursive(t->left);
-        node->right = build_ascii_tree_recursive(t->right);
-        if (node->left != NULL)
-        node->left->parent_dir = -1;
-        if (node->right != NULL)
-        node->right->parent_dir = 1;
-        sprintf(node->label, "%d", t->val);
-        node->lablen = strlen(node->label);
-        return node;
-    }
+    int lablen() const { return static_cast<int>(label.length()); }
+};
 
-    //Copy the tree into the ascii node structre
-    asciinode * build_ascii_tree(Tree * t) {
-        asciinode *node;
-        if (t == NULL) return NULL;
-        node = build_ascii_tree_recursive(t);
-        node->parent_dir = 0;
-        return node;
-    }
-    //Free all the nodes of the given tree
-    void free_ascii_tree(asciinode *node) {
-        if (node == NULL) return;
-        free_ascii_tree(node->left);
-        free_ascii_tree(node->right);
-        free(node);
-    }
-    //The following function fills in the lprofile array for the given tree.
-    //It assumes that the center of the label of the root of this tree
-    //is located at a position (x,y).  It assumes that the edge_length
-    //fields have been computed for this tree.
-    void compute_lprofile(asciinode *node, int x, int y) {
-        int i, isleft;
-        if (node == NULL) return;
-        isleft = (node->parent_dir == -1);
-        lprofile[y] = Min(lprofile[y], x-((node->lablen-isleft)/2));
-        if (node->left != NULL)
-            for (i=1; i <= node->edge_length && y+i < MAX_HEIGHT; i++)
-                lprofile[y+i] = Min(lprofile[y+i], x-i);
-        compute_lprofile(node->left, x-node->edge_length-1, y+node->edge_length+1);
-        compute_lprofile(node->right, x+node->edge_length+1, y+node->edge_length+1);
-    }
-    void compute_rprofile(asciinode *node, int x, int y) {
-        int i, notleft;
-        if (node == NULL) return;
-        notleft = (node->parent_dir != -1);
-        rprofile[y] = Max(rprofile[y], x+((node->lablen-notleft)/2));
-        if (node->right != NULL)
-            for (i=1; i <= node->edge_length && y+i < MAX_HEIGHT; i++)
-                rprofile[y+i] = Max(rprofile[y+i], x+i);
-        compute_rprofile(node->left, x-node->edge_length-1, y+node->edge_length+1);
-        compute_rprofile(node->right, x+node->edge_length+1, y+node->edge_length+1);
-    }
-    //This function fills in the edge_length and 
-    //height fields of the specified tree
-    void compute_edge_lengths(asciinode *node) {
-        int h, hmin, i, delta;
-        if (node == NULL) return;
-        compute_edge_lengths(node->left);
-        compute_edge_lengths(node->right);
-        /* first fill in the edge_length of node */
-        if (node->right == NULL && node->left == NULL)
-            node->edge_length = 0;
-        else {
-            if (node->left != NULL) {
-                for (i=0; i<node->left->height && i < MAX_HEIGHT; i++)
-                    rprofile[i] = INT_MIN;
-                compute_rprofile(node->left, 0, 0);
-                hmin = node->left->height;
-            }
-            else
-                hmin = 0;
-            if (node->right != NULL) {
-                for (i=0; i<node->right->height && i < MAX_HEIGHT; i++)
-                    lprofile[i] = INT_MAX;
-                compute_lprofile(node->right, 0, 0);
-                hmin = Min(node->right->height, hmin);
-            }
-            else
-                hmin = 0;
-            delta = 4;
-            for (i=0; i<hmin; i++)
-                delta = Max(delta, gap + 1 + rprofile[i] - lprofile[i]);
-            //If the node has two children of height 1, then we allow the
-            //two leaves to be within 1, instead of 2 
-            if (((node->left != NULL && node->left->height == 1) ||
-                (node->right != NULL && node->right->height == 1))&&delta>4)
-                delta--;
-            node->edge_length = ((delta+1)/2) - 1;
-        }
-        //now fill in the height of node
-        h = 1;
-        if (node->left != NULL)
-            h = Max(node->left->height + node->edge_length + 1, h);
-        if (node->right != NULL)
-            h = Max(node->right->height + node->edge_length + 1, h);
-        node->height = h;
-    }
-    //This function prints the given level of the given tree, assuming
-    //that the node has the given x cordinate.
-    void print_level(asciinode *node, int x, int level) {
-        int i, isleft;
-        if (node == NULL) return;
-        isleft = (node->parent_dir == -1);
-        if (level == 0) {
-            for (i=0; i<(x-print_next-((node->lablen-isleft)/2)); i++)
-                printf(" ");
-            print_next += i;
-            printf("%s", node->label);
-            print_next += node->lablen;
-        }
-        else if (node->edge_length >= level) {
-            if (node->left != NULL) {
-                for (i=0; i<(x-print_next-(level)); i++)
-                    printf(" ");
-                print_next += i;
-                printf("/");
-                print_next++;
-            }
-            if (node->right != NULL) {
-                for (i=0; i<(x-print_next+(level)); i++)
-                    printf(" ");
-                print_next += i;
-                printf("\\");
-                print_next++;
-            }
-        }
-        else {
-            print_level(node->left,
-                    x-node->edge_length-1,
-                    level-node->edge_length-1);
-            print_level(node->right,
-                    x+node->edge_length+1,
-                    level-node->edge_length-1);
-        }
-    }
+class AsciiTreePrinter {
+public:
+    AsciiTreePrinter(int gap_size = 3)
+        : gap(gap_size),
+          lprofile(MAX_HEIGHT, std::numeric_limits<int>::max()),
+          rprofile(MAX_HEIGHT, std::numeric_limits<int>::min()) {}
 
-        //prints ascii tree for given Tree structure
-    void print_ascii_tree(void* t) {
-        asciinode *proot;
-        int xmin, i;
-        if (t == NULL) return;
-        proot = build_ascii_tree((Tree*)(t));
-        compute_edge_lengths(proot);
-        for (i=0; i<proot->height && i < MAX_HEIGHT; i++)
-            lprofile[i] = INT_MAX;
-        compute_lprofile(proot, 0, 0);
-        xmin = 0;
-        for (i=0; i<proot->height && i<MAX_HEIGHT; i++)
-            xmin = Min(xmin, lprofile[i]);
-        for (i=0; i<proot->height; i++) {
+    void print(void* node) {
+        if (!node) return;
+
+        auto root = reinterpret_cast<TreeNodeRaw*>(node);
+        auto proot = build_ascii_tree(root);
+        compute_edge_lengths(proot.get());
+
+        std::fill(lprofile.begin(), lprofile.end(), std::numeric_limits<int>::max());
+        compute_lprofile(proot.get(), 0, 0);
+
+        int xmin = 0;
+        for (int i = 0; i < proot->height && i < MAX_HEIGHT; ++i)
+            xmin = std::min(xmin, lprofile[i]);
+
+        for (int i = 0; i < proot->height; ++i) {
             print_next = 0;
-            print_level(proot, -xmin, i);
-            printf("\n");
+            print_level(proot.get(), -xmin, i);
+            std::cout << '\n';
         }
+
         if (proot->height >= MAX_HEIGHT)
-            printf("(This tree is taller than %d, and may be drawn incorrectly.)\n", MAX_HEIGHT);
-        printf("\n");
-        free_ascii_tree(proot);
+            std::cout << "(This tree is taller than " << MAX_HEIGHT << ", and may be drawn incorrectly.)\n";
+    }
+
+private:
+    static constexpr int MAX_HEIGHT = 1000;
+    int gap;
+    int print_next = 0;
+    std::vector<int> lprofile;
+    std::vector<int> rprofile;
+
+    std::unique_ptr<AsciiNode> build_ascii_tree(TreeNodeRaw* t) const {
+        if (!t) return nullptr;
+
+        auto node = std::make_unique<AsciiNode>(t->val);
+        node->left = build_ascii_tree(t->left);
+        node->right = build_ascii_tree(t->right);
+
+        if (node->left) node->left->parent_dir = -1;
+        if (node->right) node->right->parent_dir = 1;
+
+        return node;
+    }
+
+    void compute_lprofile(const AsciiNode* node, int x, int y) {
+        if (!node) return;
+
+        bool isLeft = (node->parent_dir == -1);
+        lprofile[y] = std::min(lprofile[y], x - ((node->lablen() - isLeft) / 2));
+
+        if (node->left) {
+            for (int i = 1; i <= node->edge_length && y + i < MAX_HEIGHT; ++i)
+                lprofile[y + i] = std::min(lprofile[y + i], x - i);
+        }
+
+        compute_lprofile(node->left.get(), x - node->edge_length - 1, y + node->edge_length + 1);
+        compute_lprofile(node->right.get(), x + node->edge_length + 1, y + node->edge_length + 1);
+    }
+
+    void compute_rprofile(const AsciiNode* node, int x, int y) {
+        if (!node) return;
+
+        bool notLeft = (node->parent_dir != -1);
+        rprofile[y] = std::max(rprofile[y], x + ((node->lablen() - notLeft) / 2));
+
+        if (node->right) {
+            for (int i = 1; i <= node->edge_length && y + i < MAX_HEIGHT; ++i)
+                rprofile[y + i] = std::max(rprofile[y + i], x + i);
+        }
+
+        compute_rprofile(node->left.get(), x - node->edge_length - 1, y + node->edge_length + 1);
+        compute_rprofile(node->right.get(), x + node->edge_length + 1, y + node->edge_length + 1);
+    }
+
+    void compute_edge_lengths(AsciiNode* node) {
+        if (!node) return;
+
+        compute_edge_lengths(node->left.get());
+        compute_edge_lengths(node->right.get());
+
+        if (!node->left && !node->right) {
+            node->edge_length = 0;
+        } else {
+            if (node->left) compute_rprofile(node->left.get(), 0, 0);
+            if (node->right) compute_lprofile(node->right.get(), 0, 0);
+
+            int delta = 4;
+            int hmin = 0;
+            if (node->left && node->right)
+                hmin = std::min(node->left->height, node->right->height);
+            else if (node->left)
+                hmin = node->left->height;
+            else if (node->right)
+                hmin = node->right->height;
+
+            for (int i = 0; i < hmin; ++i)
+                delta = std::max(delta, gap + 1 + rprofile[i] - lprofile[i]);
+
+            if (((node->left && node->left->height == 1) ||
+                 (node->right && node->right->height == 1)) && delta > 4) {
+                --delta;
+            }
+
+            node->edge_length = ((delta + 1) / 2) - 1;
+        }
+
+        node->height = 1;
+        if (node->left)
+            node->height = std::max(node->height, node->left->height + node->edge_length + 1);
+        if (node->right)
+            node->height = std::max(node->height, node->right->height + node->edge_length + 1);
+    }
+
+    void print_level(const AsciiNode* node, int x, int level) {
+        if (!node) return;
+
+        if (level == 0) {
+            std::cout << std::string(x - print_next - (node->lablen() / 2), ' ');
+            print_next += x - print_next - (node->lablen() / 2);
+            std::cout << node->label;
+            print_next += node->lablen();
+        } else if (node->edge_length >= level) {
+            if (node->left) {
+                std::cout << std::string(x - print_next - level, ' ') << '/';
+                print_next += x - print_next - level + 1;
+            }
+            if (node->right) {
+                std::cout << std::string(x - print_next + level, ' ') << '\\';
+                print_next += x - print_next + level + 1;
+            }
+        } else {
+            print_level(node->left.get(), x - node->edge_length - 1, level - node->edge_length - 1);
+            print_level(node->right.get(), x + node->edge_length + 1, level - node->edge_length - 1);
+        }
     }
 };
 
-#endif /* AT_H */
+inline void print_ascii_tree(void* node) {
+    AsciiTreePrinter printer;
+    printer.print(node);
+}
+
+} // namespace AT
+
+#endif /* AT_HPP */

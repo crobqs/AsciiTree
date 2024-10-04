@@ -181,3 +181,59 @@ inline void print_ascii_tree(void* node) {
 } // namespace AT
 
 #endif /* AT_HPP */
+
+/*
+
+// Example code
+
+#include <iostream>
+#include <memory>
+#include "at.hpp"
+
+class Node {
+public:
+    int v;
+    std::unique_ptr<Node> l, r;
+    explicit Node(int value) : v(value), l(nullptr), r(nullptr) {}
+};
+
+class BST {
+public:
+    std::unique_ptr<Node> root;
+    bool add(int v) {
+        return add(root, v);
+    }
+    void release() {
+        root.reset();  // Automatically releases memory
+    }
+    Node* get_root() const {
+        return root.get();  // Return raw pointer to the root node
+    }
+private:
+    bool add(std::unique_ptr<Node>& node, int v) {
+        if (!node) {
+            node = std::make_unique<Node>(v);
+            return true;
+        }
+        if (v < node->v) {
+            return add(node->l, v);
+        } else if (v > node->v) {
+            return add(node->r, v);
+        }
+        return false;  // Value already exists, no duplicates
+    }
+};
+
+int main() {
+    BST bst;
+    for (int n : {3, 6, 1, 2, 9, 4, 0, 5}) {
+        bst.add(n);
+    }
+    // Pass a raw pointer to the root node
+    AT::print_ascii_tree(static_cast<void*>(bst.get_root()));
+    bst.release();
+    return 0;
+}
+
+
+*/
